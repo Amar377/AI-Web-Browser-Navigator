@@ -71,3 +71,66 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+
+
+
+
+
+
+
+ Quick Start Guide
+1. Install Ollama
+
+# Download from https://ollama.ai
+ollama pull phi3
+2. Start the Backend Server
+
+cd server
+npm install
+npx playwright install chromium
+cp .env.example .env
+npm run dev
+Server runs at: http://localhost:3001
+
+3. Start the Frontend
+
+# In another terminal, from project root
+npm run dev
+Frontend runs at: http://localhost:8080
+
+4. Test Everything
+Visit Settings page → Click "Test" button
+Should show both Server and Ollama as "Online"
+Try chatting - responses stream from your local AI!
+📁 Server Structure
+server/
+├── index.js           # Main server
+├── routes/
+│   ├── chat.js       # Ollama integration
+│   ├── navigator.js  # Playwright automation
+│   ├── jobs.js       # Job applications
+│   └── price.js      # Price comparison
+├── package.json
+└── .env              # Configuration
+🔧 Configuration
+Edit server/.env:
+
+
+PORT=3001
+OLLAMA_URL=http://localhost:11434
+FRONTEND_URL=http://localhost:8080
+DEFAULT_MODEL=phi3
+📝 API Endpoints
+Chat: /api/chat/stream, /api/chat/models Navigator: /api/navigator/start, /api/navigator/logs/:id Jobs: /api/jobs/upload-resume, /api/jobs/start Price: /api/price/search
+
+Check server/README.md and SETUP.md for detailed documentation!
+
+⚠️ Troubleshooting
+"Failed to connect to local server" → Make sure cd server && npm run dev is running
+
+"Ollama not connected" → Run ollama serve and verify with ollama list
+
+Playwright errors → Run npx playwright install in server directory
+
+Everything is ready! Start both servers and enjoy your fully local AI assistant. 🎉
