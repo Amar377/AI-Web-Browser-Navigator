@@ -59,18 +59,80 @@ export default function Chat() {
     setInput("");
     setIsLoading(true);
 
-    // Simulate AI response (will be replaced with actual Ollama API call)
-    setTimeout(() => {
+    try {
+      // Stream response from local server
+      const response = await fetch('http://localhost:3001/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+          model: 'phi3',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to connect to local server');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantContent = '';
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content:
-          "I'm currently running in demo mode. To connect to your local Ollama instance, please enable the backend integration and ensure Ollama is running at http://localhost:11434.",
+        content: "",
         timestamp: new Date(),
       };
+
       setMessages((prev) => [...prev, aiMessage]);
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter(line => line.trim().startsWith('data:'));
+
+          for (const line of lines) {
+            const data = line.replace('data:', '').trim();
+            if (data === '[DONE]') break;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                assistantContent += parsed.content;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessage.id
+                      ? { ...msg, content: assistantContent }
+                      : msg
+                  )
+                );
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+
       setIsLoading(false);
-    }, 1000);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content:
+          "⚠️ Failed to connect to local server. Please make sure the Node.js server is running at http://localhost:3001 and Ollama is running at http://localhost:11434.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      setIsLoading(false);
+    }
   };
 
   const toggleListening = () => {

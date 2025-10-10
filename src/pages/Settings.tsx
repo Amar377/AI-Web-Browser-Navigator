@@ -17,22 +17,54 @@ import { CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 
 export default function Settings() {
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [selectedModel, setSelectedModel] = useState("phi-3");
+  const [serverUrl, setServerUrl] = useState("http://localhost:3001");
+  const [selectedModel, setSelectedModel] = useState("phi3");
   const [isConnected, setIsConnected] = useState(false);
+  const [serverConnected, setServerConnected] = useState(false);
+  const [availableModels, setAvailableModels] = useState([
+    { id: "phi3", name: "Phi-3", size: "3.8GB" },
+    { id: "llama2", name: "Llama 2", size: "7GB" },
+    { id: "mistral", name: "Mistral", size: "7GB" },
+    { id: "llava", name: "LLaVA (Vision)", size: "4.7GB" },
+  ]);
   const [autoSummary, setAutoSummary] = useState(true);
   const [enableVision, setEnableVision] = useState(true);
   const [enableSpeech, setEnableSpeech] = useState(true);
 
-  const availableModels = [
-    { id: "phi-3", name: "Phi-3", size: "3.8GB" },
-    { id: "llama2", name: "Llama 2", size: "7GB" },
-    { id: "mistral", name: "Mistral", size: "7GB" },
-    { id: "llava", name: "LLaVA (Vision)", size: "4.7GB" },
-  ];
+  const handleTestConnection = async () => {
+    try {
+      // Test server connection
+      const serverResponse = await fetch(`${serverUrl}/health`);
+      if (serverResponse.ok) {
+        setServerConnected(true);
 
-  const handleTestConnection = () => {
-    // Simulate connection test
-    setIsConnected(true);
+        // Test Ollama connection through server
+        const modelsResponse = await fetch(`${serverUrl}/api/chat/models`);
+        if (modelsResponse.ok) {
+          const data = await modelsResponse.json();
+          setIsConnected(true);
+          if (data.models) {
+            setAvailableModels(
+              data.models.map((m: any) => ({
+                id: m.name,
+                name: m.name,
+                size: m.size ? `${(m.size / 1e9).toFixed(1)}GB` : "Unknown",
+              }))
+            );
+          }
+        } else {
+          setIsConnected(false);
+          setServerConnected(true);
+        }
+      } else {
+        setServerConnected(false);
+        setIsConnected(false);
+      }
+    } catch (error) {
+      console.error("Connection test failed:", error);
+      setServerConnected(false);
+      setIsConnected(false);
+    }
   };
 
   return (
@@ -49,18 +81,18 @@ export default function Settings() {
 
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-2xl mx-auto space-y-6">
-          {/* Ollama Connection */}
+          {/* Server Connection */}
           <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Ollama Connection</h2>
+            <h2 className="text-lg font-semibold mb-4">Server Connection</h2>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="ollama-url">Ollama API URL</Label>
+                <Label htmlFor="server-url">Local Server URL</Label>
                 <div className="flex gap-2">
                   <Input
-                    id="ollama-url"
-                    value={ollamaUrl}
-                    onChange={(e) => setOllamaUrl(e.target.value)}
-                    placeholder="http://localhost:11434"
+                    id="server-url"
+                    value={serverUrl}
+                    onChange={(e) => setServerUrl(e.target.value)}
+                    placeholder="http://localhost:3001"
                   />
                   <Button onClick={handleTestConnection} variant="outline">
                     <RefreshCw className="h-4 w-4 mr-2" />
@@ -69,24 +101,57 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                <div className="flex items-center gap-2">
-                  {isConnected ? (
-                    <>
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">Connected to Ollama</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Not connected</span>
-                    </>
-                  )}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                  <div className="flex items-center gap-2">
+                    {serverConnected ? (
+                      <>
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <span className="text-sm">Server Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">Server Offline</span>
+                      </>
+                    )}
+                  </div>
+                  <Badge variant={serverConnected ? "default" : "secondary"}>
+                    {serverConnected ? "Online" : "Offline"}
+                  </Badge>
                 </div>
-                <Badge variant={isConnected ? "default" : "secondary"}>
-                  {isConnected ? "Online" : "Offline"}
-                </Badge>
+
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                  <div className="flex items-center gap-2">
+                    {isConnected ? (
+                      <>
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <span className="text-sm">Ollama Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">Ollama Offline</span>
+                      </>
+                    )}
+                  </div>
+                  <Badge variant={isConnected ? "default" : "secondary"}>
+                    {isConnected ? "Online" : "Offline"}
+                  </Badge>
+                </div>
               </div>
+
+              {!serverConnected && (
+                <div className="p-3 rounded-lg bg-muted">
+                  <p className="text-xs text-muted-foreground">
+                    Make sure the Node.js server is running:
+                    <br />
+                    <code className="text-xs bg-background px-1 py-0.5 rounded">
+                      cd server && npm run dev
+                    </code>
+                  </p>
+                </div>
+              )}
             </div>
           </Card>
 

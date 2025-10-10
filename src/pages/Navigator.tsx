@@ -33,28 +33,56 @@ export default function Navigator() {
   const [isPaused, setIsPaused] = useState(false);
   const [logs, setLogs] = useState<ActionLog[]>([]);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!url || !task) return;
     setIsRunning(true);
     setIsPaused(false);
     
-    // Simulate action logs
-    const mockLogs: ActionLog[] = [
-      {
-        id: "1",
-        type: "navigate",
-        message: `Navigating to ${url}...`,
-        timestamp: new Date(),
-      },
-      {
-        id: "2",
-        type: "success",
-        message: "Page loaded successfully",
-        timestamp: new Date(Date.now() + 1000),
-      },
-    ];
+    const sessionId = `nav-${Date.now()}`;
     
-    setLogs(mockLogs);
+    try {
+      const response = await fetch('http://localhost:3001/api/navigator/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url, task, sessionId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start navigation');
+      }
+
+      const data = await response.json();
+      setLogs([data.log]);
+
+      // Poll for logs every 2 seconds
+      const interval = setInterval(async () => {
+        try {
+          const logsResponse = await fetch(
+            `http://localhost:3001/api/navigator/logs/${sessionId}`
+          );
+          const logsData = await logsResponse.json();
+          setLogs(logsData.logs);
+        } catch (error) {
+          console.error('Error fetching logs:', error);
+        }
+      }, 2000);
+
+      // Store interval for cleanup
+      (window as any).navigatorInterval = interval;
+    } catch (error) {
+      console.error('Navigation error:', error);
+      setLogs([
+        {
+          id: Date.now().toString(),
+          type: 'error',
+          message: '⚠️ Failed to connect to local server. Make sure the Node.js server is running.',
+          timestamp: new Date(),
+        },
+      ]);
+      setIsRunning(false);
+    }
   };
 
   const handlePause = () => {
