@@ -75,6 +75,18 @@ The server will start at `http://localhost:3001`
 
 ### Price Comparison
 - `POST /api/price/search` - Search product prices
+  - If available, results first come from the configured Google price API, otherwise the server falls back to Playwright scraping and finally an on-device LLM estimate.
+
+**Optional environment variables**
+- `GOOGLE_PRICE_API_URL` – HTTPS endpoint for your Google Shopping/price comparison API provider (e.g. SerpAPI).
+- `GOOGLE_PRICE_API_KEY` – API key or token for the provider.
+- `GOOGLE_PRICE_API_ENGINE` – Engine parameter (default: `google_shopping`).
+- `GOOGLE_PRICE_API_COUNTRY` – Country code (default: `in`).
+- `GOOGLE_PRICE_API_LANGUAGE` – Language code (default: `en`).
+- `PRICE_DEFAULT_CURRENCY` – ISO currency code reported in results (default: `INR`).
+- `PRICE_MIN_RESULTS` – Minimum number of offers before triggering Playwright scraping (default: `3`).
+- `PRICE_DISABLE_SCRAPE` – Set to `1` to skip Playwright scraping entirely and rely on the API/LLM fallback.
+- `PRICE_SCRAPER_USER_AGENT` – Optional custom user-agent string for Playwright (default is a desktop Chrome UA).
 
 ## Ollama Setup
 

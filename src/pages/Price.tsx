@@ -10,7 +10,6 @@ import {
   Image as ImageIcon,
   ExternalLink,
   TrendingDown,
-  TrendingUp,
 } from "lucide-react";
 
 interface PriceResult {
@@ -21,7 +20,30 @@ interface PriceResult {
   url: string;
   availability: "in-stock" | "out-of-stock" | "low-stock";
   rating?: number;
+  title?: string;
+  source?: string;
 }
+
+const getCurrencySymbol = (code: string) => {
+  switch ((code || "").toUpperCase()) {
+    case "INR":
+      return "₹";
+    case "USD":
+      return "$";
+    case "EUR":
+      return "€";
+    case "GBP":
+      return "£";
+    case "JPY":
+      return "¥";
+    case "AUD":
+      return "A$";
+    case "CAD":
+      return "C$";
+    default:
+      return (code || "").toUpperCase();
+  }
+};
 
 export default function Price() {
   const [query, setQuery] = useState("");
@@ -29,6 +51,10 @@ export default function Price() {
   const [results, setResults] = useState<PriceResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [summary, setSummary] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<
+    "scrape" | "llm" | "api" | "api+scrape" | "none" | null
+  >(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -36,51 +62,157 @@ export default function Price() {
     }
   };
 
-  const handleSearch = () => {
-    if (!query && !image) return;
-    setIsSearching(true);
+  const handleSearch = async () => {
+    if (!query.trim()) {
+      setError("Enter a product name to compare prices.");
+      return;
+    }
 
-    // Simulate search results
-    setTimeout(() => {
-      const mockResults: PriceResult[] = [
-        {
-          id: "1",
-          store: "Amazon",
-          price: 299.99,
-          currency: "USD",
-          url: "https://amazon.com",
-          availability: "in-stock",
-          rating: 4.5,
+    setIsSearching(true);
+    setError(null);
+    setSummary("");
+    setResults([]);
+    setMode(null);
+
+    try {
+      const response = await fetch("http://localhost:3001/api/price/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        {
-          id: "2",
-          store: "Best Buy",
-          price: 319.99,
-          currency: "USD",
-          url: "https://bestbuy.com",
-          availability: "in-stock",
-          rating: 4.3,
-        },
-        {
-          id: "3",
-          store: "Walmart",
-          price: 289.99,
-          currency: "USD",
-          url: "https://walmart.com",
-          availability: "low-stock",
-          rating: 4.4,
-        },
+        body: JSON.stringify({ query: query.trim() }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch price data");
+      }
+
+      const data = await response.json();
+      const allowedAvailability: PriceResult["availability"][] = [
+        "in-stock",
+        "low-stock",
+        "out-of-stock",
       ];
-      setResults(mockResults);
-      setSummary(
-        "Based on 3 retailers, the average price is $303.32. Walmart offers the best deal at $289.99 (3% below average), but stock is limited. Amazon and Best Buy have better availability."
+
+      const incoming: PriceResult[] = (data.results || []).map((result: any, index: number) => {
+        const numericPrice = Number(result.price);
+        const availability = allowedAvailability.includes(result.availability)
+          ? (result.availability as PriceResult["availability"])
+          : "in-stock";
+
+        const currencyCode =
+          typeof result.currency === "string"
+            ? result.currency.toUpperCase()
+            : "INR";
+
+        return {
+          id: result.id || `result-${index}`,
+          store: result.store || result.source || "Unknown store",
+          price: Number.isFinite(numericPrice) ? numericPrice : 0,
+          currency: currencyCode,
+          url: result.url || "#",
+          availability,
+          rating: typeof result.rating === "number" ? result.rating : undefined,
+          title: result.title,
+          source: result.source,
+        };
+      });
+
+      setResults(incoming);
+      setSummary(data.summary || "");
+      setMode(
+        (data.mode as "scrape" | "llm" | "api" | "api+scrape" | "none") ?? null
       );
+
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        const firstError = data.errors
+          .map((err: { site?: string; message?: string }) =>
+            err.site ? `${err.site}: ${err.message}` : err.message
+          )
+          .filter(Boolean)
+          .join(" | ");
+        if (firstError) {
+          setError(firstError);
+        }
+      }
+    } catch (fetchError) {
+      console.error(fetchError);
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : "Something went wrong while searching prices."
+      );
+      setMode(null);
+    } finally {
       setIsSearching(false);
-    }, 2000);
+    }
   };
 
-  const lowestPrice = results.length > 0 ? Math.min(...results.map((r) => r.price)) : 0;
-  const highestPrice = results.length > 0 ? Math.max(...results.map((r) => r.price)) : 0;
+  const pricedResults = results.filter(
+    (result) => typeof result.price === "number" && !Number.isNaN(result.price)
+  );
+  const lowestPrice =
+    pricedResults.length > 0
+      ? Math.min(...pricedResults.map((r) => r.price))
+      : 0;
+  const highestPrice =
+    pricedResults.length > 0
+      ? Math.max(...pricedResults.map((r) => r.price))
+      : 0;
+  const canSearch = query.trim().length > 0;
+  const currencyCode = pricedResults[0]?.currency ?? "INR";
+  const currencySymbol = getCurrencySymbol(currencyCode);
+
+  const summaryBadge = (() => {
+    switch (mode) {
+      case "llm":
+        return (
+          <Badge
+            variant="outline"
+            className="text-amber-600 border-amber-500/50"
+          >
+            AI estimates
+          </Badge>
+        );
+      case "api":
+        return (
+          <Badge
+            variant="outline"
+            className="text-blue-600 border-blue-500/50"
+          >
+            Google API
+          </Badge>
+        );
+      case "api+scrape":
+        return (
+          <Badge
+            variant="outline"
+            className="text-purple-600 border-purple-500/50"
+          >
+            API + Scrape
+          </Badge>
+        );
+      case "scrape":
+        return <Badge variant="outline">Live scrape</Badge>;
+      case "none":
+        return <Badge variant="outline">No data</Badge>;
+      default:
+        return null;
+    }
+  })();
+
+  const summaryNote = (() => {
+    switch (mode) {
+      case "llm":
+        return "These prices are generated by the local model for guidance—visit the retailer links to confirm current offers.";
+      case "api":
+        return "Prices retrieved via the configured Google price API. Confirm final amounts on the retailer pages.";
+      case "api+scrape":
+        return "Combined results from the Google price API and live scraping—verify details before purchasing.";
+      default:
+        return null;
+    }
+  })();
 
   return (
     <div className="flex h-full flex-col">
@@ -102,10 +234,20 @@ export default function Price() {
               <div className="flex gap-2">
                 <Input
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    if (error) {
+                      setError(null);
+                    }
+                  }}
                   placeholder="Search for a product..."
                   className="flex-1"
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleSearch();
+                    }
+                  }}
                 />
                 <input
                   type="file"
@@ -124,7 +266,7 @@ export default function Price() {
                 </label>
                 <Button
                   onClick={handleSearch}
-                  disabled={(!query && !image) || isSearching}
+                  disabled={!canSearch || isSearching}
                 >
                   <Search className="mr-2 h-4 w-4" />
                   Search
@@ -147,6 +289,12 @@ export default function Price() {
             </div>
           </Card>
 
+          {error && (
+            <Card className="border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              {error}
+            </Card>
+          )}
+
           {/* Results */}
           {isSearching ? (
             <Card className="p-12">
@@ -161,12 +309,30 @@ export default function Price() {
             <>
               {/* Summary */}
               {summary && (
-                <Card className="p-6 bg-accent/10 border-accent/20">
-                  <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <TrendingDown className="h-4 w-4 text-accent" />
-                    AI Summary
-                  </h3>
-                  <p className="text-sm text-muted-foreground">{summary}</p>
+                <Card className="p-6 bg-accent/10 border-accent/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <TrendingDown className="h-4 w-4 text-accent" />
+                      Price Summary
+                    </h3>
+                    {summaryBadge}
+                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {summary}
+                  </p>
+                  {summaryNote && (
+                    <p
+                      className={`text-xs ${
+                        mode === "llm"
+                          ? "text-amber-600"
+                          : mode === "api" || mode === "api+scrape"
+                          ? "text-blue-600"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {summaryNote}
+                    </p>
+                  )}
                 </Card>
               )}
 
@@ -176,17 +342,29 @@ export default function Price() {
                   <p className="text-xs text-muted-foreground mb-1">
                     Lowest Price
                   </p>
-                  <p className="text-2xl font-bold text-green-500">
-                    ${lowestPrice.toFixed(2)}
-                  </p>
+                  <div>
+                    <p className="text-2xl font-bold text-green-500">
+                      {currencySymbol}
+                      {lowestPrice.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] uppercase text-muted-foreground">
+                      {currencyCode}
+                    </p>
+                  </div>
                 </Card>
                 <Card className="p-4">
                   <p className="text-xs text-muted-foreground mb-1">
                     Highest Price
                   </p>
-                  <p className="text-2xl font-bold text-destructive">
-                    ${highestPrice.toFixed(2)}
-                  </p>
+                  <div>
+                    <p className="text-2xl font-bold text-destructive">
+                      {currencySymbol}
+                      {highestPrice.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] uppercase text-muted-foreground">
+                      {currencyCode}
+                    </p>
+                  </div>
                 </Card>
                 <Card className="p-4">
                   <p className="text-xs text-muted-foreground mb-1">
@@ -204,6 +382,11 @@ export default function Price() {
                 <ScrollArea className="h-[400px]">
                   <div className="divide-y divide-border">
                     {results
+                      .filter(
+                        (result) =>
+                          typeof result.price === "number" &&
+                          !Number.isNaN(result.price)
+                      )
                       .sort((a, b) => a.price - b.price)
                       .map((result, index) => (
                         <div
@@ -224,6 +407,11 @@ export default function Price() {
                               <div>
                                 <h4 className="font-medium">{result.store}</h4>
                                 <div className="flex items-center gap-2 mt-1">
+                                  {result.source && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {result.source}
+                                    </Badge>
+                                  )}
                                   <Badge
                                     variant={
                                       result.availability === "in-stock"
@@ -242,12 +430,21 @@ export default function Price() {
                                     </span>
                                   )}
                                 </div>
+                                {result.title && (
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {result.title}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
                               <div className="text-right">
                                 <p className="text-2xl font-bold">
-                                  ${result.price.toFixed(2)}
+                                  {getCurrencySymbol(result.currency)}
+                                  {result.price.toFixed(2)}
+                                </p>
+                                <p className="text-[10px] uppercase text-muted-foreground">
+                                  {result.currency}
                                 </p>
                                 {index === 0 && (
                                   <p className="text-xs text-green-500 flex items-center justify-end gap-1">

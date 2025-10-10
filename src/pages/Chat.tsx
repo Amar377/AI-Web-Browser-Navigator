@@ -35,11 +35,14 @@ export default function Chat() {
     },
   ]);
   const [input, setInput] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [summary, setSummary] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,6 +58,15 @@ export default function Chat() {
       timestamp: new Date(),
     };
 
+    const nextMessages = [...messages, userMessage];
+
+    if (!sessionIdRef.current) {
+      const newSessionId = `chat-${Date.now()}`;
+      sessionIdRef.current = newSessionId;
+      setSessionId(newSessionId);
+      setSummary("");
+    }
+
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
@@ -67,7 +79,8 @@ export default function Chat() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
+          messages: nextMessages,
+          sessionId: sessionIdRef.current,
           model: 'phi3',
         }),
       });
@@ -103,6 +116,12 @@ export default function Chat() {
 
             try {
               const parsed = JSON.parse(data);
+
+              if (parsed.sessionId && !sessionIdRef.current) {
+                sessionIdRef.current = parsed.sessionId;
+                setSessionId(parsed.sessionId);
+              }
+
               if (parsed.content) {
                 assistantContent += parsed.content;
                 setMessages((prev) =>
@@ -113,8 +132,12 @@ export default function Chat() {
                   )
                 );
               }
+
+              if (parsed.summary) {
+                setSummary(parsed.summary);
+              }
             } catch (e) {
-              // Ignore parse errors
+              // Ignore parse errors and non-JSON chunks
             }
           }
         }
@@ -132,6 +155,9 @@ export default function Chat() {
       };
       setMessages((prev) => [...prev, errorMessage]);
       setIsLoading(false);
+      sessionIdRef.current = null;
+      setSessionId(null);
+      setSummary("");
     }
   };
 
@@ -169,6 +195,31 @@ export default function Chat() {
           </Badge>
         </div>
       </div>
+
+      {(summary || sessionId) && (
+        <div className="border-b border-border bg-muted/40 px-6 py-3">
+          <Card className="mx-auto flex max-w-3xl items-start gap-3 p-4">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+              <Sparkles className="h-4 w-4 text-primary" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Session summary
+              </p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {summary
+                  ? summary
+                  : "Ask a question and I will keep track of the final results for you."}
+              </p>
+              {sessionId && (
+                <p className="font-mono text-[10px] text-muted-foreground/70">
+                  {sessionId}
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Messages */}
       <ScrollArea className="flex-1 px-6 py-4">
