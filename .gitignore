@@ -26,3 +26,8 @@ dist-ssr
 # Local automation database
 server/db/data/
 server/browser-data/
+
+.env
+venv/
+__pycache__/
+*.pyc
